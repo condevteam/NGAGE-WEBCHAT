@@ -7,5 +7,5 @@ const ChatWidget = dynamic(() => import("./components/ChatWidget"), {
 });
 
 export default function RootLayout({ children }) {
-  return <ChatWidget />;
+  return <ChatWidget companyId={process.env.NEXT_PUBLIC_COMPANY_ID} />;
 }

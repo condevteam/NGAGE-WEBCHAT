@@ -20,7 +20,7 @@ export function useStomp(widgetId, onMessage) {
         console.log("STOMP connected for widget:", widgetId);
 
         // Subscribe to messages for this widget
-        client.subscribe(`/topic/messages/${widgetId}`, (msg) => {
+        client.subscribe(`/topic/chatbot/${widgetId}`, (msg) => {
           onMessage(JSON.parse(msg.body));
         });
       },

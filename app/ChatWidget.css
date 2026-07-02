@@ -1,6 +1,5 @@
-/* Header container */
+/* ---------------------- Header (unchanged) ---------------------- */
 .chat-header {
-  /*background: linear-gradient(135deg, #007bff, #0056b3);*/
   background-image: linear-gradient(135deg, #f04242, #d41111, #639);
   color: #fff;
   padding: 12px;
@@ -12,14 +11,12 @@
   z-index: 9999;
 }
 
-/* Left side (avatar + text) */
 .chat-header-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-/* Avatar circle */
 .chat-avatar {
   width: 36px;
   height: 36px;
@@ -31,19 +28,16 @@
   font-size: 18px;
 }
 
-/* Title */
 .chat-title {
   font-weight: bold;
   font-size: 14px;
 }
 
-/* Status */
 .chat-status {
   font-size: 11px;
   opacity: 0.8;
 }
 
-/* Close button */
 .chat-close-btn {
   background: transparent;
   border: none;
@@ -56,6 +50,7 @@
 .chat-close-btn:hover {
   opacity: 0.7;
 }
+
 /* ---------------------- Messages Container ---------------------- */
 .chat-messages {
   flex: 1;
@@ -63,47 +58,61 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   padding-top: 70px;
-  padding-bottom: 80px;
-  /*background: #f9f9f9;*/
+  padding-bottom: 90px;
+}
+
+/* ---------------------- Row wrapper: bubble + its buttons ---------------------- */
+/* Alignment now lives here, not on .chat-message, so buttons line up under the bubble */
+.chat-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+}
+
+.chat-row.visitor {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-row.agent {
+  align-self: flex-start;
+  align-items: flex-start;
 }
 
 /* ---------------------- Individual Message Bubble ---------------------- */
 .chat-message {
-  max-width: 70%;
   padding: 8px 16px;
   border-radius: 10px;
   word-break: break-word;
   font-size: 12px;
   line-height: 1.5;
   position: relative;
-
   transition: transform 0.2s;
+  max-width: 100%;
 }
 
 .chat-message.visitor {
   background: #383838;
   color: #fff;
-  align-self: flex-end;
   border-bottom-right-radius: 4px;
 }
 
 .chat-message.agent {
   background: #e4e6eb;
   color: #000;
-  align-self: flex-start;
   border-bottom-left-radius: 4px;
 }
 
-/* Slight hover effect for bubbles */
 .chat-message:hover {
   transform: translateY(-2px);
 }
+
 .chat-message.agent .chat-message-time {
   color: #383838 !important;
 }
-/* ---------------------- Timestamp ---------------------- */
+
 .chat-message-time {
   font-size: 10px;
   color: #cccccc;
@@ -111,62 +120,54 @@
   text-align: right;
 }
 
-/* ---------------------- Input Container ---------------------- */
-.chat-input-container {
+/* ---------------------- Option buttons (new) ---------------------- */
+.chat-options {
   display: flex;
-  border-top: 1px solid #ddd;
-  padding: 10px 12px;
+  flex-wrap: wrap;
   gap: 8px;
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  background: #f2f2f2;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
+  margin-top: 8px;
+  justify-content: flex-end; /* mirrors bubble side; agent rows override below */
 }
 
-/* ---------------------- Input Field ---------------------- */
-.chat-input {
-  flex: 1;
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid #dbdbdb;
-  outline: none;
-  font-size: 14px;
-  transition: all 0.2s;
+.chat-row.agent .chat-options {
+  justify-content: flex-start;
 }
 
-.chat-input:focus {
-  border-color: #007bff;
-  box-shadow: 0 0 6px rgba(0, 123, 255, 0.3);
-}
-
-/* ---------------------- Send Button ---------------------- */
-.chat-send-button {
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: none;
-  /*background: #007bff;*/
-  background-image: linear-gradient(135deg, #f04242, #d41111, #639);
-  color: white;
+.chat-option-button {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1.5px solid #d41111;
+  background: #fff;
+  color: #d41111;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s;
-  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.2);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
 }
 
-.chat-send-button:hover {
-  background: #0056b3;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 123, 255, 0.3);
+.chat-option-button:hover:not(:disabled) {
+  background-image: linear-gradient(135deg, #f04242, #d41111, #639);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 10px rgba(212, 17, 17, 0.25);
 }
 
-/* Wrap input + button */
-.chat-input-row {
-  display: flex;
-  gap: 8px;
+.chat-option-button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
-/* Update container to column */
+.chat-option-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: #d1d1d1;
+  color: #999;
+}
+
+/* ---------------------- Input Container (unchanged) ---------------------- */
 .chat-input-container {
   display: flex;
   flex-direction: column;
@@ -179,7 +180,43 @@
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
 }
 
-/* Powered by text */
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #dbdbdb;
+  outline: none;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.chat-input:focus {
+  border-color: #d41111;
+  box-shadow: 0 0 6px rgba(212, 17, 17, 0.25);
+}
+
+.chat-send-button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background-image: linear-gradient(135deg, #f04242, #d41111, #639);
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  box-shadow: 0 4px 8px rgba(212, 17, 17, 0.2);
+}
+
+.chat-send-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(212, 17, 17, 0.3);
+}
+
 .chat-powered {
   text-align: center;
   font-size: 10px;
@@ -191,4 +228,8 @@
 .chat-powered span {
   font-weight: 600;
   color: #d41111;
+}
+
+.chat-message-content {
+  white-space: pre-wrap; /* respects \n and \n\n from the backend text field */
 }
