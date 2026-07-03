@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 import "../ChatWidget.css";
@@ -36,7 +37,10 @@ function normalizeOutgoing(text) {
   };
 }
 
-export default function ChatWidget({ companyId = "1" }) {
+export default function ChatWidget() {
+  const searchParams = useSearchParams();
+  const companyId =
+    searchParams.get("companyId") ?? process.env.NEXT_PUBLIC_COMPANY_ID ?? "1";
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [pendingSelection, setPendingSelection] = useState(false);

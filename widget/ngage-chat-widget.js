@@ -15,11 +15,14 @@
   `;
 
   // --- Notification sound ---
-  const audio = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
+  const audio = new Audio(
+    "https://www.soundjay.com/buttons/sounds/button-3.mp3",
+  );
 
   // --- Create iframe ---
   const iframe = document.createElement("iframe");
-  iframe.src = `http://localhost:3001?widgetId=${widgetId}`;
+  const companyId = "1";
+  iframe.src = `http://localhost:3001?widgetId=${widgetId}&companyId=${companyId}`;
   iframe.style.position = "fixed";
   iframe.style.bottom = "90px";
   iframe.style.right = "20px";
@@ -27,7 +30,8 @@
   iframe.style.height = "520px";
   iframe.style.border = "none";
   iframe.style.borderRadius = "12px";
-  iframe.style.boxShadow = "rgba(60, 64, 67, 0.3) 0px 1px 2px 0px, rgba(60, 64, 67, 0.15) 0px 2px 6px 2px";
+  iframe.style.boxShadow =
+    "rgba(60, 64, 67, 0.3) 0px 1px 2px 0px, rgba(60, 64, 67, 0.15) 0px 2px 6px 2px";
   iframe.style.zIndex = "9999";
   iframe.style.display = "none";
   iframe.style.transition = "all 0.3s ease";
@@ -51,7 +55,8 @@
   button.style.justifyContent = "center";
   button.style.cursor = "pointer";
   button.style.zIndex = "10000";
-  button.style.boxShadow = "rgba(14, 30, 37, 0.12) 0px 2px 4px 0px, rgba(14, 30, 37, 0.32) 0px 2px 16px 0px";
+  button.style.boxShadow =
+    "rgba(14, 30, 37, 0.12) 0px 2px 4px 0px, rgba(14, 30, 37, 0.32) 0px 2px 16px 0px";
   button.style.transition = "all 0.25s ease";
 
   document.body.appendChild(button);
