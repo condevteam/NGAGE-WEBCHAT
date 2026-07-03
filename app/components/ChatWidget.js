@@ -5,13 +5,57 @@ import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 import "../ChatWidget.css";
 
-function createWidgetId() {
-  let id = localStorage.getItem("CHAT_WIDGET_ID");
+const CHAT_WIDGET_ID_KEY = "CHAT_WIDGET_ID";
+const CHAT_HISTORY_KEY = "NGAGE_CHAT_HISTORY";
+
+function createWidgetId(currentWindowId) {
+  if (currentWindowId) {
+    localStorage.setItem(CHAT_WIDGET_ID_KEY, currentWindowId);
+    return currentWindowId;
+  }
+
+  let id = localStorage.getItem(CHAT_WIDGET_ID_KEY);
   if (!id) {
     id = `visitor_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    localStorage.setItem("CHAT_WIDGET_ID", id);
+    localStorage.setItem(CHAT_WIDGET_ID_KEY, id);
   }
   return id;
+}
+
+function loadStoredMessages(widgetId) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) ?? "null");
+    if (stored?.widgetId !== widgetId || !Array.isArray(stored.messages)) {
+      return [];
+    }
+
+    const lastIndex = stored.messages.length - 1;
+
+    return stored.messages.map((message, index) => {
+      const hasOptions = message.renderHint?.options?.length > 0;
+      const isLastMessage = index === lastIndex;
+
+      return {
+        ...message,
+        // Only auto-answer option messages that AREN'T the last message.
+        // The last message (if it has options) stays active.
+        answered: hasOptions ? !isLastMessage : message.answered,
+        restored: true,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredMessages(widgetId, messages) {
+  localStorage.setItem(
+    CHAT_HISTORY_KEY,
+    JSON.stringify({
+      widgetId,
+      messages: messages.map(({ restored, ...message }) => message),
+    }),
+  );
 }
 
 function normalizeIncoming(raw) {
@@ -41,15 +85,28 @@ export default function ChatWidget() {
   const searchParams = useSearchParams();
   const companyId =
     searchParams.get("companyId") ?? process.env.NEXT_PUBLIC_COMPANY_ID ?? "1";
-  const [messages, setMessages] = useState([]);
+  const currentWindowId = searchParams.get("widgetId");
+  const widgetIdRef = useRef(null);
+  if (widgetIdRef.current === null) {
+    widgetIdRef.current = createWidgetId(currentWindowId);
+  }
+  const widgetId = widgetIdRef.current;
+  const [messages, setMessages] = useState(() => loadStoredMessages(widgetId));
   const [input, setInput] = useState("");
-  const [pendingSelection, setPendingSelection] = useState(false);
+  const [pendingSelection, setPendingSelection] = useState(() =>
+    messages.some(
+      (message) => message.renderHint?.options?.length > 0 && !message.answered,
+    ),
+  );
   const chatEndRef = useRef(null);
   const clientRef = useRef(null);
   const seenEventIds = useRef(new Set());
-  const widgetIdRef = useRef(null);
-  if (widgetIdRef.current === null) widgetIdRef.current = createWidgetId();
-  const widgetId = widgetIdRef.current;
+  const isReconnectingRef = useRef(false);
+  const latestOptionMessageId = [...messages]
+    .reverse()
+    .find(
+      (message) => message.renderHint?.options?.length > 0 && !message.answered,
+    )?.id;
 
   const publishRaw = useCallback((payload) => {
     if (clientRef.current && clientRef.current.connected) {
@@ -61,11 +118,29 @@ export default function ChatWidget() {
   }, []);
 
   useEffect(() => {
-    const socket = new SockJS("http://localhost:9090/chat");
     const client = new Client({
-      webSocketFactory: () => socket,
+      webSocketFactory: () => new SockJS("http://localhost:9090/chat"),
+
       reconnectDelay: 5000,
+
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
+
+      debug: (str) => {
+        if (str.toLowerCase().includes("reconnect")) {
+          console.log("STOMP RECONNECT EVENT:", str);
+        }
+        console.log(str);
+      },
+
       onConnect: () => {
+        console.log("CONNECTED");
+
+        if (isReconnectingRef.current) {
+          console.log("Reconnected successfully");
+          isReconnectingRef.current = false;
+        }
+
         client.subscribe(`/topic/chatbot/${widgetId}`, (msg) => {
           const raw = JSON.parse(msg.body);
           if (raw.eventId) {
@@ -81,6 +156,23 @@ export default function ChatWidget() {
           setPendingSelection(hasButtons);
         });
       },
+
+      onDisconnect: () => {
+        console.log("DISCONNECTED");
+      },
+
+      onWebSocketClose: (evt) => {
+        console.log("WS CLOSED", evt);
+
+        if (!isReconnectingRef.current) {
+          console.log("Reconnecting started...");
+          isReconnectingRef.current = true;
+        }
+      },
+
+      onWebSocketError: (evt) => {
+        console.log("WS ERROR", evt);
+      },
     });
     client.activate();
     clientRef.current = client;
@@ -91,11 +183,22 @@ export default function ChatWidget() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    saveStoredMessages(widgetId, messages);
+  }, [messages, widgetId]);
+
   const markAnswered = (id) => {
     setMessages((prev) =>
       prev.map((m) => (m.id === id ? { ...m, answered: true } : m)),
     );
   };
+
+  const markOptionMessagesAnswered = (messagesToUpdate) =>
+    messagesToUpdate.map((message) =>
+      message.renderHint?.options?.length > 0
+        ? { ...message, answered: true }
+        : message,
+    );
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -107,7 +210,7 @@ export default function ChatWidget() {
       companyId: String(companyId),
       timestamp: local.timestamp,
     });
-    setMessages((prev) => [...prev, local]);
+    setMessages((prev) => [...markOptionMessagesAnswered(prev), local]);
     setInput("");
     setPendingSelection(false);
   };
@@ -169,7 +272,9 @@ export default function ChatWidget() {
                     <button
                       key={opt.payload}
                       className="chat-option-button"
-                      disabled={msg.answered}
+                      disabled={
+                        msg.answered || msg.id !== latestOptionMessageId
+                      }
                       onClick={() => handleOptionClick(msg.id, opt)}
                     >
                       {opt.label}
