@@ -1,58 +1,67 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import SockJS from "sockjs-client";
 import { Client } from "@stomp/stompjs";
 
 export function useStomp(widgetId, onMessage) {
   const clientRef = useRef(null);
-  const connectedRef = useRef(false);
+  const seenEventIds = useRef(new Set());
 
   useEffect(() => {
-    // Create SockJS connection to Spring Boot WebSocket endpoint
-    const socket = new SockJS("http://localhost:9090/chat"); // replace with your backend URL
-
     const client = new Client({
-      webSocketFactory: () => socket,
-      reconnectDelay: 5000, // auto-reconnect
-      onConnect: () => {
-        connectedRef.current = true;
-        console.log("STOMP connected for widget:", widgetId);
+      webSocketFactory: () => new SockJS("http://localhost:9090/chat"),
 
-        // Subscribe to messages for this widget
-        client.subscribe(`/topic/chatbot/${widgetId}`, (msg) => {
-          onMessage(JSON.parse(msg.body));
+      reconnectDelay: 5000,
+
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
+
+      onConnect() {
+        console.log("Connected");
+
+        client.subscribe(`/topic/chatbot/${widgetId}`, (message) => {
+          const raw = JSON.parse(message.body);
+
+          if (raw.eventId) {
+            if (seenEventIds.current.has(raw.eventId)) return;
+            seenEventIds.current.add(raw.eventId);
+          }
+
+          onMessage(raw);
         });
       },
-      onStompError: (frame) => {
-        console.error("Broker error:", frame);
+
+      onDisconnect() {
+        console.log("Disconnected");
       },
-      onWebSocketClose: () => {
-        connectedRef.current = false;
+
+      onWebSocketClose(evt) {
+        console.log(evt);
+      },
+
+      onStompError(frame) {
+        console.error(frame);
       },
     });
 
     client.activate();
+
     clientRef.current = client;
 
-    // Cleanup
-    return () => {
-      client.deactivate();
-      connectedRef.current = false;
-    };
+    return () => client.deactivate();
   }, [widgetId, onMessage]);
 
-  // Send message safely
-  const sendMessage = (msg) => {
-    if (clientRef.current && connectedRef.current) {
-      clientRef.current.publish({
-        destination: "/app/send",
-        body: JSON.stringify(msg),
-      });
-    } else {
-      console.warn("STOMP client not connected yet");
-    }
-  };
+  const sendMessage = useCallback((payload) => {
+    if (!clientRef.current?.connected) return false;
 
-  return sendMessage;
+    clientRef.current.publish({
+      destination: "/app/send",
+      body: JSON.stringify(payload),
+    });
+
+    return true;
+  }, []);
+
+  return { sendMessage };
 }

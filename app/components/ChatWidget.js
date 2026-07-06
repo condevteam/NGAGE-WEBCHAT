@@ -1,9 +1,8 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import SockJS from "sockjs-client";
-import { Client } from "@stomp/stompjs";
 import "../ChatWidget.css";
+import { useStomp } from "../hooks/useStomp";
 
 const CHAT_WIDGET_ID_KEY = "CHAT_WIDGET_ID";
 const CHAT_HISTORY_KEY = "NGAGE_CHAT_HISTORY";
@@ -99,85 +98,23 @@ export default function ChatWidget() {
     ),
   );
   const chatEndRef = useRef(null);
-  const clientRef = useRef(null);
-  const seenEventIds = useRef(new Set());
-  const isReconnectingRef = useRef(false);
   const latestOptionMessageId = [...messages]
     .reverse()
     .find(
       (message) => message.renderHint?.options?.length > 0 && !message.answered,
     )?.id;
 
-  const publishRaw = useCallback((payload) => {
-    if (clientRef.current && clientRef.current.connected) {
-      clientRef.current.publish({
-        destination: "/app/send",
-        body: JSON.stringify(payload),
-      });
-    }
-  }, []);
+  const { sendMessage } = useStomp(widgetId, (raw) => {
+    const normalized = normalizeIncoming(raw);
 
-  useEffect(() => {
-    const client = new Client({
-      webSocketFactory: () => new SockJS("http://localhost:9090/chat"),
+    setMessages((prev) => [...prev, normalized]);
 
-      reconnectDelay: 5000,
+    const hasButtons =
+      normalized.renderHint?.renderType === "BUTTONS" ||
+      normalized.renderHint?.renderType === "LIST";
 
-      heartbeatIncoming: 10000,
-      heartbeatOutgoing: 10000,
-
-      debug: (str) => {
-        if (str.toLowerCase().includes("reconnect")) {
-          console.log("STOMP RECONNECT EVENT:", str);
-        }
-        console.log(str);
-      },
-
-      onConnect: () => {
-        console.log("CONNECTED");
-
-        if (isReconnectingRef.current) {
-          console.log("Reconnected successfully");
-          isReconnectingRef.current = false;
-        }
-
-        client.subscribe(`/topic/chatbot/${widgetId}`, (msg) => {
-          const raw = JSON.parse(msg.body);
-          if (raw.eventId) {
-            if (seenEventIds.current.has(raw.eventId)) return;
-            seenEventIds.current.add(raw.eventId);
-          }
-          const normalized = normalizeIncoming(raw);
-          setMessages((prev) => [...prev, normalized]);
-
-          const hasButtons =
-            normalized.renderHint?.renderType === "BUTTONS" ||
-            normalized.renderHint?.renderType === "LIST";
-          setPendingSelection(hasButtons);
-        });
-      },
-
-      onDisconnect: () => {
-        console.log("DISCONNECTED");
-      },
-
-      onWebSocketClose: (evt) => {
-        console.log("WS CLOSED", evt);
-
-        if (!isReconnectingRef.current) {
-          console.log("Reconnecting started...");
-          isReconnectingRef.current = true;
-        }
-      },
-
-      onWebSocketError: (evt) => {
-        console.log("WS ERROR", evt);
-      },
-    });
-    client.activate();
-    clientRef.current = client;
-    return () => client.deactivate();
-  }, [widgetId]);
+    setPendingSelection(hasButtons);
+  });
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -203,7 +140,7 @@ export default function ChatWidget() {
   const handleSend = () => {
     if (!input.trim()) return;
     const local = normalizeOutgoing(input);
-    publishRaw({
+    sendMessage({
       sender: "VISITOR",
       content: input,
       widgetId,
@@ -217,7 +154,7 @@ export default function ChatWidget() {
 
   const handleOptionClick = (msgId, option) => {
     const local = normalizeOutgoing(option.label);
-    publishRaw({
+    sendMessage({
       sender: "VISITOR",
       content: option.label,
       selectionPayload: option.payload,
