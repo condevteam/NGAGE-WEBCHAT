@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --turbopack -p 3001",
     "build": "next build --turbopack",
-    "start": "next start -p 3001"
+    "start": "next start -p 3001",
+    "test": "node app/lib/vitalValidation.test.mjs"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.3.0",

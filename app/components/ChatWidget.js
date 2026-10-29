@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import "../ChatWidget.css";
 import { useStomp } from "../hooks/useStomp";
+import { vitalMaxLength, validateVitalAnswer } from "../lib/vitalValidation.mjs";
 
 const CHAT_WIDGET_ID_KEY = "CHAT_WIDGET_ID";
 const CHAT_HISTORY_KEY = "NGAGE_CHAT_HISTORY";
@@ -38,7 +39,7 @@ function loadStoredMessages(widgetId) {
         ...message,
         // Only auto-answer option messages that AREN'T the last message.
         // The last message (if it has options) stays active.
-        answered: hasOptions ? !isLastMessage : message.answered,
+        answered: hasOptions ? (!isLastMessage || message.answered) : message.answered,
         restored: true,
       };
     });
@@ -92,6 +93,9 @@ export default function ChatWidget() {
   const widgetId = widgetIdRef.current;
   const [messages, setMessages] = useState(() => loadStoredMessages(widgetId));
   const [input, setInput] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [inputError, setInputError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const [pendingSelection, setPendingSelection] = useState(() =>
     messages.some(
       (message) => message.renderHint?.options?.length > 0 && !message.answered,
@@ -103,6 +107,13 @@ export default function ChatWidget() {
     .find(
       (message) => message.renderHint?.options?.length > 0 && !message.answered,
     )?.id;
+  const activeVital = [...messages].reverse().find(
+    (message) => message.sender === "AGENT" && message.step === "STEP_VITAL"
+      && message.renderHint?.inputSpec && !message.answered,
+  );
+  const activeSpec = activeVital?.renderHint?.inputSpec;
+  const activeType = activeSpec?.inputType?.toLowerCase();
+  const activeMaxLength = vitalMaxLength(activeSpec);
 
   const { sendMessage } = useStomp(widgetId, (raw) => {
     const normalized = normalizeIncoming(raw);
@@ -114,6 +125,11 @@ export default function ChatWidget() {
       normalized.renderHint?.renderType === "LIST";
 
     setPendingSelection(hasButtons);
+    if (normalized.renderHint?.inputSpec || hasButtons) {
+      setInputError("");
+      setInput("");
+      setSelectedFile(null);
+    }
   });
 
   useEffect(() => {
@@ -138,23 +154,38 @@ export default function ChatWidget() {
     );
 
   const handleSend = () => {
-    if (!input.trim()) return;
-    const local = normalizeOutgoing(input);
-    sendMessage({
+    if (activeType === "select" || activeType === "file") return;
+    const value = activeType === "date" && input
+      ? `${input.slice(8, 10)}/${input.slice(5, 7)}/${input.slice(0, 4)}`
+      : input.trim();
+    if (!value && !activeSpec) return;
+    const validationError = validateVitalAnswer(activeSpec, value);
+    if (validationError) {
+      setInputError(validationError);
+      return;
+    }
+    const local = normalizeOutgoing(value);
+    const sent = sendMessage({
       sender: "VISITOR",
-      content: input,
+      content: value,
       widgetId,
       companyId: String(companyId),
       timestamp: local.timestamp,
     });
-    setMessages((prev) => [...markOptionMessagesAnswered(prev), local]);
+    if (!sent) {
+      setInputError("Connection lost. Please try again.");
+      return;
+    }
+    setMessages((prev) => [...markOptionMessagesAnswered(prev).map((message) =>
+      message.id === activeVital?.id ? { ...message, answered: true } : message), local]);
     setInput("");
+    setInputError("");
     setPendingSelection(false);
   };
 
   const handleOptionClick = (msgId, option) => {
     const local = normalizeOutgoing(option.label);
-    sendMessage({
+    const sent = sendMessage({
       sender: "VISITOR",
       content: option.label,
       selectionPayload: option.payload,
@@ -162,13 +193,64 @@ export default function ChatWidget() {
       companyId: String(companyId),
       timestamp: local.timestamp,
     });
+    if (!sent) {
+      setInputError("Connection lost. Please try again.");
+      return;
+    }
     markAnswered(msgId);
     setMessages((prev) => [...prev, local]);
     setPendingSelection(false);
   };
 
+  const handleFileSend = async () => {
+    if (!activeVital || !selectedFile || uploading) {
+      setInputError(activeSpec?.required ? "Required" : "Choose a file");
+      return;
+    }
+    const file = selectedFile;
+    const maxBytes = activeSpec.maxFileSizeBytes ?? 100_000_000;
+    if (file.size > maxBytes) {
+      setInputError("Maximum file size is 100 MB");
+      return;
+    }
+    if (activeSpec.accept) {
+      const accepted = activeSpec.accept.split(",").map((rule) => rule.trim().toLowerCase());
+      const name = file.name.toLowerCase();
+      const mime = file.type.toLowerCase();
+      if (!accepted.some((rule) => rule.startsWith(".") ? name.endsWith(rule)
+        : rule.endsWith("/*") ? mime.startsWith(rule.slice(0, -1)) : mime === rule)) {
+        setInputError(activeSpec.validationMessage || "File type is not allowed");
+        return;
+      }
+    }
+    const form = new FormData();
+    form.append("widgetId", widgetId);
+    form.append("companyId", String(companyId));
+    form.append("file", file);
+    setUploading(true);
+    setInputError("");
+    try {
+      const response = await fetch("/api/vitals/file", { method: "POST", body: form });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Upload failed");
+      const local = normalizeOutgoing(file.name);
+      setMessages((prev) => {
+        const updated = prev.map((message) => message.id === activeVital.id
+          ? { ...message, answered: true } : message);
+        const index = updated.findIndex((message) => message.id === activeVital.id);
+        updated.splice(index < 0 ? updated.length : index + 1, 0, local);
+        return updated;
+      });
+      setSelectedFile(null);
+    } catch (error) {
+      setInputError(error.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
-    <div className="chat-widget">
+    <div className={`chat-widget ${activeType === "address" ? "chat-widget-address" : ""}`}>
       <div className="chat-header">
         <div className="chat-header-left">
           <div className="chat-avatar">💬</div>
@@ -226,25 +308,41 @@ export default function ChatWidget() {
 
       <div className="chat-input-container">
         <div className="chat-input-row">
-          <input
-            className="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder={
-              pendingSelection
-                ? "Pick an option above, or type here…"
-                : "Type a message..."
-            }
-          />
-          <button
-            className="chat-send-button"
-            onClick={handleSend}
-            aria-label="Send"
-          >
-            ➤
-          </button>
+          {activeType === "file" ? (
+            <>
+              <input className="chat-input" type="file" accept={activeSpec.accept || undefined}
+                disabled={uploading} onChange={(e) => { setSelectedFile(e.target.files?.[0] || null); setInputError(""); }} />
+              <button className="chat-send-button" onClick={handleFileSend} disabled={uploading}
+                aria-label="Upload file">{uploading ? "…" : "➤"}</button>
+            </>
+          ) : activeType === "select" ? (
+            <span className="chat-input chat-input-instruction">Pick an option above</span>
+          ) : (
+            <>
+              {activeType === "address" ? (
+                <textarea className="chat-input chat-textarea" value={input} maxLength={activeMaxLength}
+                  aria-label={activeVital?.text || "Address"}
+                  onChange={(e) => { setInput(e.target.value); setInputError(""); }}
+                  onKeyDown={(e) => (e.ctrlKey || e.metaKey) && e.key === "Enter" && handleSend()}
+                  placeholder="Type an address..." />
+              ) : (
+                <input className="chat-input"
+                  aria-label={activeVital?.text || "Message"}
+                  type={activeType === "date" ? "date" : activeType === "email" ? "email"
+                    : activeType === "phone" || activeType === "whatsapp_number" ? "tel" : "text"}
+                  maxLength={activeMaxLength || undefined}
+                  value={input} onChange={(e) => { setInput(e.target.value); setInputError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  placeholder={activeType === "date" ? undefined : pendingSelection
+                    ? "Pick an option above, or type here…" : "Type a message..."} />
+              )}
+              <button className="chat-send-button" onClick={handleSend} aria-label="Send">➤</button>
+            </>
+          )}
         </div>
+        {inputError && <div className="chat-input-error" role="alert">{inputError}</div>}
+        {activeMaxLength && activeType !== "date" && activeType !== "select" && activeType !== "file"
+          && <div className="chat-input-count">{input.length}/{activeMaxLength} characters</div>}
         <div className="chat-powered">
           Powered by{" "}
           <span>

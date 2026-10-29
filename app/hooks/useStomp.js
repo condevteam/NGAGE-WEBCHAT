@@ -7,10 +7,12 @@ import { Client } from "@stomp/stompjs";
 export function useStomp(widgetId, onMessage) {
   const clientRef = useRef(null);
   const seenEventIds = useRef(new Set());
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
 
   useEffect(() => {
     const client = new Client({
-      webSocketFactory: () => new SockJS("http://localhost:9090/chat"),
+      webSocketFactory: () => new SockJS(`${process.env.NEXT_PUBLIC_CHAT_BACKEND_URL || "http://localhost:9090"}/chat`),
 
       reconnectDelay: 5000,
 
@@ -28,7 +30,7 @@ export function useStomp(widgetId, onMessage) {
             seenEventIds.current.add(raw.eventId);
           }
 
-          onMessage(raw);
+          onMessageRef.current(raw);
         });
       },
 
@@ -50,7 +52,7 @@ export function useStomp(widgetId, onMessage) {
     clientRef.current = client;
 
     return () => client.deactivate();
-  }, [widgetId, onMessage]);
+  }, [widgetId]);
 
   const sendMessage = useCallback((payload) => {
     if (!clientRef.current?.connected) return false;

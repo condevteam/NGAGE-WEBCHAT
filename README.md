@@ -2,6 +2,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Set `NEXT_PUBLIC_CHAT_BACKEND_URL` to the backend URL used by the browser's
+WebSocket connection, and `CHAT_BACKEND_URL` to the URL the Next.js server uses
+for vital-field file uploads. Both default to `http://localhost:9090`; the
+upload route also uses `NEXT_PUBLIC_CHAT_BACKEND_URL` if its own variable is unset.
+
 First, run the development server:
 
 ```bash
